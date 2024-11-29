@@ -5,6 +5,7 @@ from graph_construction.vamana import vamana
 from graph_construction.greedy_search import greedy_search
 from utils.clustering import perform_clustering
 from disk_index.beam_search import beam_search
+from utils.caching import RedisCache
 
 
 class DiskANNIndex:
@@ -45,16 +46,23 @@ class DiskANNIndex:
         self.cluster_graphs = {}  # Each cluster's graph
         self.cluster_assignments = {}  # Cluster assignments for each point
 
-    def build_index(self):
-        """
-        Build the DiskANN index by performing clustering and graph construction.
+        # Initialize Redis cache
+        self.cache = RedisCache(host="localhost", port=6379, db=0, ttl=3600)  # 1-hour TTL
 
-        :return: None
-        """
+    def build_index(self):
         print("[INFO] Performing clustering...")
-        self.cluster_assignments = perform_clustering(
-            self.data, self.num_clusters, overlap=self.overlap, seed=self.seed, metric=self.metric
-        )
+
+        # Check if cluster assignments are cached
+        cached_assignments = self.cache.get("cluster_assignments")
+        if cached_assignments is not None:
+            print("[INFO] Loaded cluster assignments from cache.")
+            self.cluster_assignments = cached_assignments
+        else:
+            # Perform clustering and cache the result
+            self.cluster_assignments = perform_clustering(
+                self.data, self.num_clusters, overlap=self.overlap, seed=self.seed, metric=self.metric
+            )
+            self.cache.set("cluster_assignments", self.cluster_assignments)
 
         print("[INFO] Clustering complete. Constructing graphs for each cluster...")
 
@@ -62,21 +70,30 @@ class DiskANNIndex:
             print(f"[INFO] Constructing graph for cluster {cluster_id} with {len(point_indices)} points...")
             cluster_data = self.data[point_indices]  # Extract data for the current cluster
 
-            # Create an empty graph for the cluster
-            cluster_graph = Graph()
+            # Check if the graph for this cluster is cached
+            cached_graph = self.cache.get(f"cluster_graph:{cluster_id}")
+            if cached_graph is not None:
+                print(f"[INFO] Loaded graph for cluster {cluster_id} from cache.")
+                self.cluster_graphs[cluster_id] = cached_graph
+            else:
+                # Create a new graph and cache it
+                cluster_graph = Graph()
 
-            # Build the Vamana graph for the cluster
-            vamana(
-                graph=cluster_graph,
-                data=cluster_data,
-                max_degree=self.max_degree,
-                alpha=self.alpha,
-                metric=self.metric,
-                seed=self.seed,
-            )
+                # Build the Vamana graph for the cluster
+                vamana(
+                    graph=cluster_graph,
+                    data=cluster_data,
+                    max_degree=self.max_degree,
+                    alpha=self.alpha,
+                    metric=self.metric,
+                    seed=self.seed,
+                )
 
-            # Store the graph and cluster data
-            self.cluster_graphs[cluster_id] = {"graph": cluster_graph, "data": cluster_data, "indices": point_indices}
+                # Store the graph and cluster data
+                self.cluster_graphs[cluster_id] = {"graph": cluster_graph, "data": cluster_data, "indices": point_indices}
+
+                # Cache the graph
+                self.cache.set(f"cluster_graph:{cluster_id}", self.cluster_graphs[cluster_id])
 
         print("[INFO] Graph construction complete.")
 
@@ -132,116 +149,36 @@ class DiskANNIndex:
 
         print("[INFO] Index loaded successfully.")
 
-    # def query(self, query_point, top_k=10, beam_size=5):
-    #     """
-    #     Query the index to find the top-k nearest neighbors of the given query point.
-
-    #     :param query_point: A 1D numpy array representing the query vector.
-    #     :param top_k: Number of nearest neighbors to retrieve.
-    #     :param beam_size: Beam size for the search.
-    #     :return: A list of tuples (global_index, distance).
-    #     """
-    #     cluster_distances = []
-    #     for cluster_id, cluster_data in self.cluster_graphs.items():
-    #         cluster_centroid = np.mean(cluster_data["data"], axis=0)
-    #         dist = np.linalg.norm(query_point - cluster_centroid)
-    #         cluster_distances.append((cluster_id, dist))
-
-    #     cluster_distances = sorted(cluster_distances, key=lambda x: x[1])
-
-    #     visited_points = set()
-    #     nearest_neighbors = []
-
-    #     for cluster_id, _ in cluster_distances[:2]:
-    #         cluster_graph = self.cluster_graphs[cluster_id]["graph"]
-    #         cluster_indices = self.cluster_graphs[cluster_id]["indices"]
-
-    #         # Perform beam search
-    #         result = beam_search(
-    #             graph=cluster_graph,
-    #             query_vector=query_point,
-    #             start_node=0,
-    #             k=top_k,
-    #             beam_size=beam_size,
-    #             metric=self.metric,
-    #         )
-
-    #         # Map local indices to global indices
-    #         for local_index, distance in result:
-    #             global_index = cluster_indices[local_index]
-    #             if global_index not in visited_points:
-    #                 visited_points.add(global_index)
-    #                 nearest_neighbors.append((global_index, distance))
-
-    #     nearest_neighbors = sorted(nearest_neighbors, key=lambda x: x[1])[:top_k]
-    #     return nearest_neighbors
-
-
-    # def query(self, query_point, top_k=10):
-    #     """
-    #     Perform a nearest neighbor query on the index.
-
-    #     :param query_point: A single query vector of shape (d,).
-    #     :param top_k: Number of nearest neighbors to return.
-    #     :return: A list of (point_index, distance) tuples representing the top-k nearest neighbors.
-    #     """
-    #     # Identify the closest cluster(s) to the query point
-    #     cluster_distances = []
-    #     for cluster_id, cluster_data in self.cluster_graphs.items():
-    #         # Compute centroid of the cluster
-    #         cluster_centroid = np.mean(cluster_data["data"], axis=0)
-
-    #         # Compute distance to the cluster centroid
-    #         dist = np.linalg.norm(query_point - cluster_centroid)
-    #         cluster_distances.append((cluster_id, dist))
-
-    #     # Sort clusters by proximity to the query point
-    #     cluster_distances = sorted(cluster_distances, key=lambda x: x[1])
-
-    #     # Search the top cluster(s) for the nearest neighbors
-    #     visited_points = set()
-    #     nearest_neighbors = []
-
-    #     for cluster_id, _ in cluster_distances[:2]:  # Search top 2 clusters
-    #         cluster_graph = self.cluster_graphs[cluster_id]["graph"]
-    #         cluster_data = self.cluster_graphs[cluster_id]["data"]
-    #         cluster_indices = self.cluster_graphs[cluster_id]["indices"]
-
-    #         # Perform GreedySearch within the cluster graph
-    #         # Start the search at the first node in the cluster
-    #         result = greedy_search(
-    #             graph=cluster_graph,
-    #             query_vector=query_point,
-    #             start_node=0,  # Start at an arbitrary node (e.g., the first node in the cluster)
-    #             k=top_k,
-    #             metric=self.metric,
-    #         )
-
-    #         # Map results back to the original dataset indices
-    #         for local_index, distance in result:
-    #             global_index = cluster_indices[local_index]
-    #             if global_index not in visited_points:
-    #                 visited_points.add(global_index)
-    #                 nearest_neighbors.append((global_index, distance))
-
-    #     # Sort and return the top-k neighbors
-    #     nearest_neighbors = sorted(nearest_neighbors, key=lambda x: x[1])[:top_k]
-    #     return nearest_neighbors
-
     def query(self, query_point, top_k=10, method="beam", beam_size=5):
-        """
-        Query the index to find the top-k nearest neighbors of the given query point.
+        # Generate a unique key for the query
+        query_key = f"query:{hash(query_point.tobytes())}:{top_k}:{method}:{beam_size}"
 
-        :param query_point: A 1D numpy array representing the query vector.
-        :param top_k: Number of nearest neighbors to retrieve.
-        :param method: Search method to use ("beam" or "greedy").
-        :param beam_size: Beam size for the beam search (ignored for greedy search).
-        :return: A list of tuples (global_index, distance).
-        """
+        # Check if the query result is cached
+        cached_result = self.cache.get(query_key)
+        if cached_result is not None:
+            print("[INFO] Returning cached query result.")
+            return cached_result
+
+        print("[INFO] Querying index...")
+
         cluster_distances = []
         for cluster_id, cluster_data in self.cluster_graphs.items():
-            cluster_centroid = np.mean(cluster_data["data"], axis=0)
-            dist = np.linalg.norm(query_point - cluster_centroid)
+            # Generate a unique cache key for the query-cluster pair
+            cache_key = f"distance:{hash(query_point.tobytes())}:{cluster_id}"
+
+            # Check if the distance is cached
+            cached_distance = self.cache.get(cache_key)
+            if cached_distance is not None:
+                dist = cached_distance  # Use the cached distance
+            else:
+                # Compute the distance if not cached
+                cluster_centroid = np.mean(cluster_data["data"], axis=0)
+                dist = np.linalg.norm(query_point - cluster_centroid)
+
+                # Cache the computed distance
+                self.cache.set(cache_key, dist)
+
+            # Append the result
             cluster_distances.append((cluster_id, dist))
 
         cluster_distances = sorted(cluster_distances, key=lambda x: x[1])
@@ -283,8 +220,11 @@ class DiskANNIndex:
 
         # Sort and return the top-k global neighbors
         nearest_neighbors = sorted(nearest_neighbors, key=lambda x: x[1])[:top_k]
-        return nearest_neighbors
 
+        # Cache the query result
+        self.cache.set(query_key, nearest_neighbors)
+
+        return nearest_neighbors
 
 if __name__ == "__main__":
     # Generate random data for demonstration
