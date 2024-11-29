@@ -4,6 +4,7 @@ from graph_construction.graph import Graph
 from graph_construction.vamana import vamana
 from graph_construction.greedy_search import greedy_search
 from utils.clustering import perform_clustering
+from disk_index.beam_search import beam_search
 
 
 class DiskANNIndex:
@@ -131,57 +132,160 @@ class DiskANNIndex:
 
         print("[INFO] Index loaded successfully.")
 
-    def query(self, query_point, top_k=10):
-        """
-        Perform a nearest neighbor query on the index.
+    # def query(self, query_point, top_k=10, beam_size=5):
+    #     """
+    #     Query the index to find the top-k nearest neighbors of the given query point.
 
-        :param query_point: A single query vector of shape (d,).
-        :param top_k: Number of nearest neighbors to return.
-        :return: A list of (point_index, distance) tuples representing the top-k nearest neighbors.
+    #     :param query_point: A 1D numpy array representing the query vector.
+    #     :param top_k: Number of nearest neighbors to retrieve.
+    #     :param beam_size: Beam size for the search.
+    #     :return: A list of tuples (global_index, distance).
+    #     """
+    #     cluster_distances = []
+    #     for cluster_id, cluster_data in self.cluster_graphs.items():
+    #         cluster_centroid = np.mean(cluster_data["data"], axis=0)
+    #         dist = np.linalg.norm(query_point - cluster_centroid)
+    #         cluster_distances.append((cluster_id, dist))
+
+    #     cluster_distances = sorted(cluster_distances, key=lambda x: x[1])
+
+    #     visited_points = set()
+    #     nearest_neighbors = []
+
+    #     for cluster_id, _ in cluster_distances[:2]:
+    #         cluster_graph = self.cluster_graphs[cluster_id]["graph"]
+    #         cluster_indices = self.cluster_graphs[cluster_id]["indices"]
+
+    #         # Perform beam search
+    #         result = beam_search(
+    #             graph=cluster_graph,
+    #             query_vector=query_point,
+    #             start_node=0,
+    #             k=top_k,
+    #             beam_size=beam_size,
+    #             metric=self.metric,
+    #         )
+
+    #         # Map local indices to global indices
+    #         for local_index, distance in result:
+    #             global_index = cluster_indices[local_index]
+    #             if global_index not in visited_points:
+    #                 visited_points.add(global_index)
+    #                 nearest_neighbors.append((global_index, distance))
+
+    #     nearest_neighbors = sorted(nearest_neighbors, key=lambda x: x[1])[:top_k]
+    #     return nearest_neighbors
+
+
+    # def query(self, query_point, top_k=10):
+    #     """
+    #     Perform a nearest neighbor query on the index.
+
+    #     :param query_point: A single query vector of shape (d,).
+    #     :param top_k: Number of nearest neighbors to return.
+    #     :return: A list of (point_index, distance) tuples representing the top-k nearest neighbors.
+    #     """
+    #     # Identify the closest cluster(s) to the query point
+    #     cluster_distances = []
+    #     for cluster_id, cluster_data in self.cluster_graphs.items():
+    #         # Compute centroid of the cluster
+    #         cluster_centroid = np.mean(cluster_data["data"], axis=0)
+
+    #         # Compute distance to the cluster centroid
+    #         dist = np.linalg.norm(query_point - cluster_centroid)
+    #         cluster_distances.append((cluster_id, dist))
+
+    #     # Sort clusters by proximity to the query point
+    #     cluster_distances = sorted(cluster_distances, key=lambda x: x[1])
+
+    #     # Search the top cluster(s) for the nearest neighbors
+    #     visited_points = set()
+    #     nearest_neighbors = []
+
+    #     for cluster_id, _ in cluster_distances[:2]:  # Search top 2 clusters
+    #         cluster_graph = self.cluster_graphs[cluster_id]["graph"]
+    #         cluster_data = self.cluster_graphs[cluster_id]["data"]
+    #         cluster_indices = self.cluster_graphs[cluster_id]["indices"]
+
+    #         # Perform GreedySearch within the cluster graph
+    #         # Start the search at the first node in the cluster
+    #         result = greedy_search(
+    #             graph=cluster_graph,
+    #             query_vector=query_point,
+    #             start_node=0,  # Start at an arbitrary node (e.g., the first node in the cluster)
+    #             k=top_k,
+    #             metric=self.metric,
+    #         )
+
+    #         # Map results back to the original dataset indices
+    #         for local_index, distance in result:
+    #             global_index = cluster_indices[local_index]
+    #             if global_index not in visited_points:
+    #                 visited_points.add(global_index)
+    #                 nearest_neighbors.append((global_index, distance))
+
+    #     # Sort and return the top-k neighbors
+    #     nearest_neighbors = sorted(nearest_neighbors, key=lambda x: x[1])[:top_k]
+    #     return nearest_neighbors
+
+    def query(self, query_point, top_k=10, method="beam", beam_size=5):
         """
-        # Identify the closest cluster(s) to the query point
+        Query the index to find the top-k nearest neighbors of the given query point.
+
+        :param query_point: A 1D numpy array representing the query vector.
+        :param top_k: Number of nearest neighbors to retrieve.
+        :param method: Search method to use ("beam" or "greedy").
+        :param beam_size: Beam size for the beam search (ignored for greedy search).
+        :return: A list of tuples (global_index, distance).
+        """
         cluster_distances = []
         for cluster_id, cluster_data in self.cluster_graphs.items():
-            # Compute centroid of the cluster
             cluster_centroid = np.mean(cluster_data["data"], axis=0)
-
-            # Compute distance to the cluster centroid
             dist = np.linalg.norm(query_point - cluster_centroid)
             cluster_distances.append((cluster_id, dist))
 
-        # Sort clusters by proximity to the query point
         cluster_distances = sorted(cluster_distances, key=lambda x: x[1])
 
-        # Search the top cluster(s) for the nearest neighbors
         visited_points = set()
         nearest_neighbors = []
 
-        for cluster_id, _ in cluster_distances[:2]:  # Search top 2 clusters
+        for cluster_id, _ in cluster_distances[:2]:  # Focus on the top 2 closest clusters
             cluster_graph = self.cluster_graphs[cluster_id]["graph"]
-            cluster_data = self.cluster_graphs[cluster_id]["data"]
             cluster_indices = self.cluster_graphs[cluster_id]["indices"]
 
-            # Perform GreedySearch within the cluster graph
-            # Start the search at the first node in the cluster
-            result = greedy_search(
-                graph=cluster_graph,
-                query_vector=query_point,
-                start_node=0,  # Start at an arbitrary node (e.g., the first node in the cluster)
-                k=top_k,
-                metric=self.metric,
-            )
+            # Choose the search method
+            if method == "beam":
+                result = beam_search(
+                    graph=cluster_graph,
+                    query_vector=query_point,
+                    start_node=0,
+                    k=top_k,
+                    beam_size=beam_size,
+                    metric=self.metric,
+                )
+            elif method == "greedy":
+                result = greedy_search(
+                    graph=cluster_graph,
+                    query_vector=query_point,
+                    start_node=0,
+                    k=top_k,
+                    metric=self.metric,
+                )
+            else:
+                raise ValueError(f"Unsupported query method: {method}")
 
-            # Map results back to the original dataset indices
+            # Map local indices to global indices
             for local_index, distance in result:
                 global_index = cluster_indices[local_index]
                 if global_index not in visited_points:
                     visited_points.add(global_index)
                     nearest_neighbors.append((global_index, distance))
 
-        # Sort and return the top-k neighbors
+        # Sort and return the top-k global neighbors
         nearest_neighbors = sorted(nearest_neighbors, key=lambda x: x[1])[:top_k]
         return nearest_neighbors
-    
+
+
 if __name__ == "__main__":
     # Generate random data for demonstration
     data = np.random.rand(100, 128)  # 100 points in 128-dimensional space
