@@ -88,15 +88,21 @@ class Graph:
         with open(filepath, 'wb') as f:
             pickle.dump(self, f)
 
-    @staticmethod
-    def load(filepath):
+
+    def load(self, filepath):
         """
         Load a graph from a pickle file.
         :param filepath: Path to the file from which the graph will be loaded.
         :return: A Graph object.
         """
         with open(filepath, 'rb') as f:
-            return pickle.load(f)
+            loaded_graph = pickle.load(f)
+
+        # Ensure the loaded object is a Graph instance
+        if not isinstance(loaded_graph, Graph):
+            raise TypeError("Loaded object is not a valid Graph instance.")
+
+        return loaded_graph
 
     ### Visualization (Optional for Debugging) ###
 
