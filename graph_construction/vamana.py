@@ -49,10 +49,11 @@ def vamana(graph, data, max_degree, alpha, metric="euclidean", seed=42):
     # Step 3: Improve connectivity using backward edges
     for node_id in range(num_nodes):
         for neighbor_id in graph.get_neighbors(node_id):
-            graph.add_edge(neighbor_id, node_id)
+            # Ensure no duplicate edges or over-degree connections
+            if len(graph.adjacency_list[neighbor_id]) < max_degree:
+                graph.add_edge(neighbor_id, node_id)
 
     return graph
-
 
 ### Test the Vamana algorithm ###
 if __name__ == "__main__":

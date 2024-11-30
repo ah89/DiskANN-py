@@ -187,6 +187,81 @@ python main.py --dataset ./data/siftsmall/processed/ --index_file ./index/siftsm
 
 ---
 
+Here’s a **"How to Run the Tests"** section for your GitHub `README.md`. It explains how to set up the environment and run the tests for your `diskann_py` project.
+
+---
+
+## **How to Run the Tests**
+
+To ensure that the components of the project (e.g., graph construction, search algorithms, and disk-based indexing) work correctly, unit tests are provided in the `tests/` directory. Follow these steps to run the tests:
+
+### **1. Install Dependencies**
+
+Before running the tests, make sure you have all the required Python libraries installed. Use the `requirements.txt` file to install them:
+
+```bash
+pip install -r requirements.txt
+```
+
+### **2. Run All Tests**
+
+You can run all the tests in the `tests/` directory using **pytest**:
+
+```bash
+pytest tests/
+```
+
+This will execute all unit tests in the project and display the results.
+
+### **3. Run Specific Test Files**
+
+If you want to run tests for a specific module, you can specify the test file. For example:
+
+- To test graph construction algorithms (e.g., Vamana):
+  ```bash
+  pytest tests/test_graph.py
+  ```
+
+- To test search algorithms (e.g., BeamSearch):
+  ```bash
+  pytest tests/test_search.py
+  ```
+
+- To test DiskANN index construction:
+  ```bash
+  pytest tests/test_disk_index.py
+  ```
+
+### **4. View Detailed Test Output**
+
+To see detailed output for each test (e.g., print statements or assertions), use the `-v` flag:
+
+```bash
+pytest -v tests/
+```
+
+### **5. Debugging with a Single Test Function**
+
+If you need to run a specific test function for debugging, use the `-k` flag with the test's name. For example:
+
+```bash
+pytest -k "test_vamana_graph_construction" -v
+```
+
+---
+
+### **Testing Framework**
+
+The tests are built using **pytest**, a simple and powerful testing framework for Python. If you don’t have it installed, you can install it with:
+
+```bash
+pip install pytest
+```
+
+---
+
+Let me know if you need additional sections or further adjustments!
+
 ## **Contributing**
 
 Contributions are welcome! If you'd like to add features or fix issues, please fork the repository, make changes, and submit a pull request.
