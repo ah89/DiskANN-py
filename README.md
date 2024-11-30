@@ -167,12 +167,6 @@ tar -zxvf siftsmall.tar.gz
 python utils/dataset.py --main_dir ./data --dataset_name siftsmall
 ```
 
-### **Run DiskANN System**
-
-```bash
-python main.py --dataset ./data/siftsmall/processed/ --index_file ./index/siftsmall_index
-```
-
 ---
 
 ## **Key Features**
